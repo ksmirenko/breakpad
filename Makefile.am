@@ -61,6 +61,11 @@ AM_CFLAGS += -fPIC
 AM_CXXFLAGS += -fPIC
 endif
 
+if WINDOWS_HOST
+# don't have stab.h, don't build stabs support
+AM_CPPFLAGS += -DNO_STABS_SUPPORT
+endif
+
 # Specify include paths for ac macros
 ACLOCAL_AMFLAGS = -I m4
 
@@ -116,7 +121,6 @@ pkgconfig_DATA =
 if SYSTEM_TEST_LIBS
 TEST_CFLAGS = $(GTEST_CFLAGS) $(GMOCK_CFLAGS)
 TEST_LIBS = $(GTEST_LIBS) -lgtest_main $(GMOCK_LIBS)
-TEST_DEPS =
 else
 TEST_CFLAGS = \
 	-I$(top_srcdir)/src/testing/include \
@@ -124,7 +128,6 @@ TEST_CFLAGS = \
 	-I$(top_srcdir)/src/testing/gtest \
 	-I$(top_srcdir)/src/testing
 TEST_LIBS = src/testing/libtesting.a
-TEST_DEPS = $(TEST_LIBS)
 endif
 
 ## Libraries
@@ -359,6 +362,12 @@ endif
 endif
 endif LINUX_HOST
 
+if WINDOWS_HOST
+if !DISABLE_TOOLS
+bin_PROGRAMS += \
+	src/tools/windows/dump_syms_dwarf/dump_syms
+endif
+endif
 
 ## Tests
 if !DISABLE_PROCESSOR
@@ -526,14 +535,11 @@ endif
 src_client_linux_linux_client_unittest_shlib_DEPENDENCIES = \
 	src/client/linux/linux_dumper_unittest_helper \
 	src/client/linux/libbreakpad_client.a \
-	$(TEST_DEPS) \
 	src/libbreakpad.a
 
 src_client_linux_linux_client_unittest_SOURCES =
-# The extra-long build id is for a test in minidump_writer_unittest.cc.
 src_client_linux_linux_client_unittest_LDFLAGS = \
-	-Wl,-rpath,'$$ORIGIN' \
-	-Wl,--build-id=0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+	-Wl,-rpath,'$$ORIGIN'
 if ANDROID_HOST
 src_client_linux_linux_client_unittest_LDFLAGS += \
         -llog
@@ -585,7 +591,6 @@ src_tools_linux_symupload_minidump_upload_LDADD = -ldl
 
 src_tools_linux_symupload_sym_upload_SOURCES = \
 	src/common/linux/http_upload.cc \
-	src/common/linux/symbol_upload.cc \
 	src/tools/linux/symupload/sym_upload.cc
 src_tools_linux_symupload_sym_upload_LDADD = -ldl
 
@@ -705,6 +710,24 @@ src_tools_linux_md2core_minidump_2_core_unittest_LDADD = \
 	$(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
 
 endif LINUX_HOST
+
+if WINDOWS_HOST
+if !DISABLE_TOOLS
+src_tools_windows_dump_syms_dwarf_dump_syms_SOURCES = \
+	src/common/dwarf_cfi_to_module.cc \
+	src/common/dwarf_cu_to_module.cc \
+	src/common/dwarf_line_to_module.cc \
+	src/common/language.cc \
+	src/common/module.cc \
+	src/common/dwarf/bytereader.cc \
+	src/common/dwarf/dwarf2diehandler.cc \
+	src/common/dwarf/dwarf2reader.cc \
+	src/common/pecoff/dump_symbols.cc \
+	src/common/pecoff/pecoffutils.cc \
+	src/common/pecoff/pecoff_file_id.cc \
+	src/tools/windows/dump_syms_dwarf/dump_syms.cc
+endif !DISABLE_TOOLS
+endif WINDOWS_HOST
 
 if !DISABLE_PROCESSOR
 src_processor_address_map_unittest_SOURCES = \
@@ -1260,8 +1283,6 @@ EXTRA_DIST = \
 	src/common/linux/guid_creator.h \
 	src/common/linux/http_upload.cc \
 	src/common/linux/http_upload.h \
-	src/common/linux/symbol_upload.cc \
-	src/common/linux/symbol_upload.h \
 	src/common/mac/HTTPMultipartUpload.h \
 	src/common/mac/HTTPMultipartUpload.m \
 	src/common/mac/dump_syms.h \
