@@ -54,9 +54,9 @@ using std::vector;
 
 class HTTPUpload {
  public:
-  // Sends the given sets of parameters and files as a multipart POST
-  // request to the given URL.
-  // Each key in |files| is the name of the file part of the request
+  // Sends the given set of parameters, along with the contents of
+  // upload_file, as a multipart POST request to the given URL.
+  // file_part_name contains the name of the file part of the request
   // (i.e. it corresponds to the name= attribute on an <input type="file">.
   // Parameter names must contain only printable ASCII characters,
   // and may not contain a quote (") character.
@@ -66,8 +66,9 @@ class HTTPUpload {
   // If response_code is non-NULL, it will be set to the HTTP response code
   // received (or 0 if the request failed before getting an HTTP response).
   static bool SendRequest(const wstring &url,
-                          const map<wstring, wstring> &parameters,
-                          const map<wstring, wstring> &files,
+						  const map<wstring, wstring> &parameters,
+						  const wstring &upload_file,
+						  const wstring &file_part_name,
                           int *timeout,
                           wstring *response_body,
                           int *response_code);
@@ -87,11 +88,12 @@ class HTTPUpload {
   // Generates a HTTP request header for a multipart form submit.
   static wstring GenerateRequestHeader(const wstring &boundary);
 
-  // Given a set of parameters, a set of upload files, and a file part name,
+  // Given a set of parameters, an upload filename, and a file part name,
   // generates a multipart request body string with these parameters
   // and minidump contents.  Returns true on success.
   static bool GenerateRequestBody(const map<wstring, wstring> &parameters,
-                                  const map<wstring, wstring> &files,
+								  const wstring &upload_file,
+								  const wstring &file_part_name,
                                   const wstring &boundary,
                                   string *request_body);
 
