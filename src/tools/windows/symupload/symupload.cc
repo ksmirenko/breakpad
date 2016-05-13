@@ -164,27 +164,12 @@ int wmain(int argc, wchar_t *argv[]) {
   else
     printUsageAndExit();
 
-  // extracting symbol and writing to temp file
-  /*wstring symbol_file;
-  PDBModuleInfo pdb_info;
-  if (!DumpSymbolsToTempFile(module, &symbol_file, &pdb_info)) {
-    fwprintf(stderr, L"Could not get symbol data from %s\n", module);
-    return 1;
-  }*/
-
-  //wstring code_file = WindowsStringUtils::GetBaseName(wstring(symbol_file));
-
-  // generating debug identifier
-  std::hash<wstring> wstr_hash;
-  char buffer[256];
-  sprintf(buffer, "%d", wstr_hash(code_file + symbol_file));
-  string debug_identifier_raw = string(buffer);
-  wstring debug_identifier = wstring(debug_identifier_raw.begin(), debug_identifier_raw.end());
-
   map<wstring, wstring> parameters;
   parameters[L"code_file"] = code_file;
   parameters[L"debug_file"] = symbol_file;
-  parameters[L"debug_identifier"] = debug_identifier; // NB: may not work as intended
+  // This version is using default debug identifier, but make sure you use
+  // a suitable version of processor on server-side.
+  parameters[L"debug_identifier"] = L"000000000000000000000000000000000";
   parameters[L"os"] = L"windows";  // This version of symupload is Windows-only
   parameters[L"cpu"] = L"x86";
   
@@ -211,10 +196,6 @@ int wmain(int argc, wchar_t *argv[]) {
     return -1;
   }
 
-  // send only one file, not a map
-  //map<wstring, wstring> files;
-  //files[L"symbol_file"] = symbol_file;
-
   bool success = true;
 
   while (currentarg < argc) {
@@ -222,7 +203,7 @@ int wmain(int argc, wchar_t *argv[]) {
     if (!HTTPUpload::SendRequest(
     argv[currentarg]
     , parameters
-    , symbol_file
+    , symbol_file // use old version of http_upload which sends one file, not a map
     , L"symbol_file"
     , timeout == -1 ? NULL : &timeout
     , nullptr
@@ -236,8 +217,6 @@ int wmain(int argc, wchar_t *argv[]) {
   wprintf(L"Response code = %ld\n", response_code);
     currentarg++;
   }
-
-  //_wunlink(symbol_file.c_str());
 
   if (success) {
     wprintf(L"Uploaded symbols for windows-x86/%s (%s %s)\n",
