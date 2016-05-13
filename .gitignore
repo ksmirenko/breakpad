@@ -87,3 +87,7 @@ src/tools/gyp
 *.VC.*db
 Debug/
 Release/
+
+# Ignore Windows binaries, except those that should explicitly be included.
+*.exe
+!src/tools/windows/binaries

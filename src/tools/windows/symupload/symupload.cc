@@ -106,15 +106,21 @@ static bool GetFileVersionString(const wchar_t *filename, wstring *version) {
 __declspec(noreturn) void printUsageAndExit() {
   wprintf(L"Usage:\n\n"
           L"    symupload [--timeout NN] [--product product_name] ^\n"
-          L"              <file.sym> <file.exe|file.dll> <symbol upload URL> ^\n"
+          L"              [--version version] <symbol_file> ^\n"
+          L"              <code_file.exe|code_file.dll> <symbol upload URL> ^\n"
           L"              [...<symbol upload URLs>]\n\n");
-  wprintf(L"  - Timeout is in milliseconds, or can be 0 to be unlimited.\n");
+  wprintf(L"  - timeout is in milliseconds, or can be 0 to be unlimited.\n");
   wprintf(L"  - product_name is an HTTP-friendly product name. It must only\n"
           L"    contain an ascii subset: alphanumeric and punctuation.\n"
-          L"    This string is case-sensitive.\n\n");
+          L"    This string is case-sensitive.\n"
+          L"  - version is a string which must only contain numbers and dots.\n"
+          L"    A symbol server generally needs it. Sometimes the version can\n"
+          L"    be obtained automatically, sometimes not. In that case, you should\n"
+          L"    provide it.\n"
+          L"  - symbol_file is a .sym or .pdb file that you want to upload.\n\n");
   wprintf(L"Example:\n\n"
-          L"    symupload.exe --timeout 0 --product Chrome ^\n"
-          L"        chrome.dll http://no.free.symbol.server.for.you\n");
+          L"    symupload.exe --timeout 0 --product TestApp --version 1.0 ^\n"
+          L"        test_app.dll http://your.symbol.server\n");
   exit(0);
 }
 
@@ -122,6 +128,7 @@ int wmain(int argc, wchar_t *argv[]) {
   const wchar_t *symbol_file;
   wstring code_file;
   const wchar_t *product = nullptr;
+  const wchar_t *version = nullptr;
   int timeout = -1;
   int currentarg = 1;
   while (argc > currentarg + 1) {
@@ -132,6 +139,11 @@ int wmain(int argc, wchar_t *argv[]) {
     }
     if (!wcscmp(L"--product", argv[currentarg])) {
       product = argv[currentarg + 1];
+      currentarg += 2;
+      continue;
+    }
+    if (!wcscmp(L"--version", argv[currentarg])) {
+      version = argv[currentarg + 1];
       currentarg += 2;
       continue;
     }
@@ -146,8 +158,8 @@ int wmain(int argc, wchar_t *argv[]) {
 
   // extracting code file name
   if (argc >= currentarg + 2) {
-	  const wchar_t *code_file_raw = argv[currentarg++];
-	  code_file = WindowsStringUtils::GetBaseName(wstring(code_file_raw));
+    const wchar_t *code_file_raw = argv[currentarg++];
+    code_file = WindowsStringUtils::GetBaseName(wstring(code_file_raw));
   }
   else
     printUsageAndExit();
@@ -187,15 +199,19 @@ int wmain(int argc, wchar_t *argv[]) {
         symbol_file);
   }
 
-  // Don't make a missing version a hard error.  Issue a warning, and let the
-  // server decide whether to reject files without versions.
+  // The version must be provided. If there is no version parameter and
+  // no version can be extracted from the symbol file, issue an error.
   wstring file_version;
-  if (GetFileVersionString(symbol_file, &file_version)) {
+  if (version) {
+    parameters[L"version"] = version;
+  } else if (GetFileVersionString(symbol_file, &file_version)) {
     parameters[L"version"] = file_version;
   } else {
     fwprintf(stderr, L"Warning: Could not get file version for %s\n", symbol_file);
+    return -1;
   }
 
+  // send only one file, not a map
   //map<wstring, wstring> files;
   //files[L"symbol_file"] = symbol_file;
 
@@ -204,20 +220,20 @@ int wmain(int argc, wchar_t *argv[]) {
   while (currentarg < argc) {
     int response_code;
     if (!HTTPUpload::SendRequest(
-		argv[currentarg]
-		, parameters
-		, symbol_file
-		, L"symbol_file"
-		, timeout == -1 ? NULL : &timeout
-		, nullptr
-		, &response_code
-	)) {
+    argv[currentarg]
+    , parameters
+    , symbol_file
+    , L"symbol_file"
+    , timeout == -1 ? NULL : &timeout
+    , nullptr
+    , &response_code
+  )) {
       success = false;
       fwprintf(stderr,
                L"Symbol file upload to %s failed. Response code = %ld\n",
                argv[currentarg], response_code);
     }
-	wprintf(L"Response code = %ld\n", response_code);
+  wprintf(L"Response code = %ld\n", response_code);
     currentarg++;
   }
 
