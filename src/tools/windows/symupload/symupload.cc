@@ -55,15 +55,12 @@
 #include "common/windows/string_utils-inl.h"
 
 #include "common/windows/http_upload.h"
-#include "common/windows/pdb_source_line_writer.h"
 
 using std::string;
 using std::wstring;
 using std::vector;
 using std::map;
 using google_breakpad::HTTPUpload;
-using google_breakpad::PDBModuleInfo;
-using google_breakpad::PDBSourceLineWriter;
 using google_breakpad::WindowsStringUtils;
 
 // Extracts the file version information for the given filename,
@@ -106,71 +103,32 @@ static bool GetFileVersionString(const wchar_t *filename, wstring *version) {
   return true;
 }
 
-// Creates a new temporary file and writes the symbol data from the given
-// exe/dll file to it.  Returns the path to the temp file in temp_file_path
-// and information about the pdb in pdb_info.
-static bool DumpSymbolsToTempFile(const wchar_t *file,
-                                  wstring *temp_file_path,
-                                  PDBModuleInfo *pdb_info) {
-  google_breakpad::PDBSourceLineWriter writer;
-  // Use EXE_FILE to get information out of the exe/dll in addition to the
-  // pdb.  The name and version number of the exe/dll are of value, and
-  // there's no way to locate an exe/dll given a pdb.
-  if (!writer.Open(file, PDBSourceLineWriter::EXE_FILE)) {
-    return false;
-  }
-
-  wchar_t temp_path[_MAX_PATH];
-  if (GetTempPath(_MAX_PATH, temp_path) == 0) {
-    return false;
-  }
-
-  wchar_t temp_filename[_MAX_PATH];
-  if (GetTempFileName(temp_path, L"sym", 0, temp_filename) == 0) {
-    return false;
-  }
-
-  FILE *temp_file = NULL;
-#if _MSC_VER >= 1400  // MSVC 2005/8
-  if (_wfopen_s(&temp_file, temp_filename, L"w") != 0)
-#else  // _MSC_VER >= 1400
-  // _wfopen_s was introduced in MSVC8.  Use _wfopen for earlier environments.
-  // Don't use it with MSVC8 and later, because it's deprecated.
-  if (!(temp_file = _wfopen(temp_filename, L"w")))
-#endif  // _MSC_VER >= 1400
-  {
-    return false;
-  }
-
-  bool success = writer.WriteMap(temp_file);
-  fclose(temp_file);
-  if (!success) {
-    _wunlink(temp_filename);
-    return false;
-  }
-
-  *temp_file_path = temp_filename;
-
-  return writer.GetModuleInfo(pdb_info);
-}
-
 __declspec(noreturn) void printUsageAndExit() {
   wprintf(L"Usage:\n\n"
           L"    symupload [--timeout NN] [--product product_name] ^\n"
-          L"              <file.exe|file.dll> <symbol upload URL> ^\n"
+          L"              [--version version] <symbol_file> ^\n"
+          L"              <code_file.exe|code_file.dll> <symbol upload URL> ^\n"
           L"              [...<symbol upload URLs>]\n\n");
-  wprintf(L"  - Timeout is in milliseconds, or can be 0 to be unlimited.\n");
+  wprintf(L"  - timeout is in milliseconds, or can be 0 to be unlimited.\n");
   wprintf(L"  - product_name is an HTTP-friendly product name. It must only\n"
           L"    contain an ascii subset: alphanumeric and punctuation.\n"
-          L"    This string is case-sensitive.\n\n");
+          L"    This string is case-sensitive.\n"
+          L"  - version is a string which must only contain numbers and dots.\n"
+          L"    A symbol server generally needs it. Sometimes the version can\n"
+          L"    be obtained automatically, sometimes not. In that case, you should\n"
+          L"    provide it.\n"
+          L"  - symbol_file is a .sym or .pdb file that you want to upload.\n\n");
   wprintf(L"Example:\n\n"
-          L"    symupload.exe --timeout 0 --product Chrome ^\n"
-          L"        chrome.dll http://no.free.symbol.server.for.you\n");
+          L"    symupload.exe --timeout 0 --product TestApp --version 1.0 ^\n"
+          L"        test_app.dll http://your.symbol.server\n");
   exit(0);
 }
+
 int wmain(int argc, wchar_t *argv[]) {
-  const wchar_t *module;
+  const wchar_t *symbol_file;
+  wstring code_file;
   const wchar_t *product = nullptr;
+  const wchar_t *version = nullptr;
   int timeout = -1;
   int currentarg = 1;
   while (argc > currentarg + 1) {
@@ -184,29 +142,36 @@ int wmain(int argc, wchar_t *argv[]) {
       currentarg += 2;
       continue;
     }
+    if (!wcscmp(L"--version", argv[currentarg])) {
+      version = argv[currentarg + 1];
+      currentarg += 2;
+      continue;
+    }
     break;
   }
 
-  if (argc >= currentarg + 2)
-    module = argv[currentarg++];
+  // extracting symbol file name
+  if (argc >= currentarg + 3)
+    symbol_file = argv[currentarg++];
   else
     printUsageAndExit();
 
-  wstring symbol_file;
-  PDBModuleInfo pdb_info;
-  if (!DumpSymbolsToTempFile(module, &symbol_file, &pdb_info)) {
-    fwprintf(stderr, L"Could not get symbol data from %s\n", module);
-    return 1;
+  // extracting code file name
+  if (argc >= currentarg + 2) {
+    const wchar_t *code_file_raw = argv[currentarg++];
+    code_file = WindowsStringUtils::GetBaseName(wstring(code_file_raw));
   }
-
-  wstring code_file = WindowsStringUtils::GetBaseName(wstring(module));
+  else
+    printUsageAndExit();
 
   map<wstring, wstring> parameters;
   parameters[L"code_file"] = code_file;
-  parameters[L"debug_file"] = pdb_info.debug_file;
-  parameters[L"debug_identifier"] = pdb_info.debug_identifier;
+  parameters[L"debug_file"] = symbol_file;
+  // This version is using default debug identifier, but make sure you use
+  // a suitable version of processor on server-side.
+  parameters[L"debug_identifier"] = L"000000000000000000000000000000000";
   parameters[L"os"] = L"windows";  // This version of symupload is Windows-only
-  parameters[L"cpu"] = pdb_info.cpu;
+  parameters[L"cpu"] = L"x86";
   
   // Don't make a missing product name a hard error.  Issue a warning and let
   // the server decide whether to reject files without product name.
@@ -216,42 +181,46 @@ int wmain(int argc, wchar_t *argv[]) {
     fwprintf(
         stderr,
         L"Warning: No product name (flag --product) was specified for %s\n",
-        module);
+        symbol_file);
   }
 
-  // Don't make a missing version a hard error.  Issue a warning, and let the
-  // server decide whether to reject files without versions.
+  // The version must be provided. If there is no version parameter and
+  // no version can be extracted from the symbol file, issue an error.
   wstring file_version;
-  if (GetFileVersionString(module, &file_version)) {
+  if (version) {
+    parameters[L"version"] = version;
+  } else if (GetFileVersionString(symbol_file, &file_version)) {
     parameters[L"version"] = file_version;
   } else {
-    fwprintf(stderr, L"Warning: Could not get file version for %s\n", module);
+    fwprintf(stderr, L"Warning: Could not get file version for %s\n", symbol_file);
+    return -1;
   }
-
-  map<wstring, wstring> files;
-  files[L"symbol_file"] = symbol_file;
 
   bool success = true;
 
   while (currentarg < argc) {
     int response_code;
-    if (!HTTPUpload::SendRequest(argv[currentarg], parameters, files,
-                                 timeout == -1 ? NULL : &timeout,
-                                 nullptr, &response_code)) {
+    if (!HTTPUpload::SendRequest(
+    argv[currentarg]
+    , parameters
+    , symbol_file // use old version of http_upload which sends one file, not a map
+    , L"symbol_file"
+    , timeout == -1 ? NULL : &timeout
+    , nullptr
+    , &response_code
+  )) {
       success = false;
       fwprintf(stderr,
                L"Symbol file upload to %s failed. Response code = %ld\n",
                argv[currentarg], response_code);
     }
+  wprintf(L"Response code = %ld\n", response_code);
     currentarg++;
   }
 
-  _wunlink(symbol_file.c_str());
-
   if (success) {
-    wprintf(L"Uploaded symbols for windows-%s/%s/%s (%s %s)\n",
-            pdb_info.cpu.c_str(), pdb_info.debug_file.c_str(),
-            pdb_info.debug_identifier.c_str(), code_file.c_str(),
+    wprintf(L"Uploaded symbols for windows-x86/%s (%s %s)\n",
+            symbol_file, code_file.c_str(),
             file_version.c_str());
   }
 

@@ -81,3 +81,13 @@ src/third_party/glog
 src/third_party/lss
 src/third_party/protobuf
 src/tools/gyp
+
+# Ignore Visual Studio files
+*.vcxproj.user
+*.VC.*db
+Debug/
+Release/
+
+# Ignore Windows binaries, except those that should explicitly be included.
+*.exe
+!src/tools/windows/binaries

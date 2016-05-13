@@ -1979,6 +1979,20 @@ string MinidumpModule::debug_file() const {
     }
   }
 
+  // Manufacture debug-file from code-file
+  if (file.empty()) {
+    file = code_file();
+
+    BPLOG(INFO) << "Generated debug_file '" << file << "' from code_file '" << *name_ << "'";
+  }
+
+  // This may be a windows-style pathname, so find the basename considering both
+  // forward and back-slashes.
+  const size_t last_slash_idx = file.find_last_of("\\/");
+  if (std::string::npos != last_slash_idx) {
+    file.erase(0, last_slash_idx + 1);
+  }
+
   // Relatively common case
   BPLOG_IF(INFO, file.empty()) << "MinidumpModule could not determine "
                                   "debug_file for " << *name_;
@@ -2068,6 +2082,15 @@ string MinidumpModule::debug_identifier() const {
   // a CodeView record).  Treat it as an error (empty identifier) for now.
 
   // TODO(mmentovai): on the Mac, provide fallbacks as in code_identifier().
+
+  // XXX: PE generated with gcc don't currently have CV records, so the Windows
+  // minidumper can't record any identifier information, so there's no useful
+  // identifier for us to match with.  Fallback to a default debug_identifier.
+  if (identifier.empty())
+  {
+    identifier = "000000000000000000000000000000000";
+  }
+
 
   // Relatively common case
   BPLOG_IF(INFO, identifier.empty()) << "MinidumpModule could not determine "
