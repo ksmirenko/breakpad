@@ -1,3 +1,31 @@
+# About this fork
+
+I have created this fork to customize Breakpad and its tools for me as I am working to [integrate Breakpad](https://github.com/ksmirenko/breakpad-testfield) into Qt projects.
+
+Please see [this repo](https://github.com/jon-turney/google-breakpad) for the original, up-to-date DWARF-supporting Breakpad edition. The majority of features (dump_syms_dwarf and changes in processor) in my repository come from that one.
+
+## Features and differences from Google's original
+
+* `tools/windows/dump_syms_dwarf` - a tool which can read DWARF debugging information from PE/COFF executables and create symbol files
+* changes in processor - in the absence of debug_file and debug_identifier, defaults of code file name and identifier of 33 zeroes are used.
+* `tools/windows/symupload_nodump` - a tool for uploading existing symbol files (the original `symupload` performes symbol dumping as well, which is not what you want in case of DWARF files). If no debug_file or debug_identifier can be extracted from module (which takes place in case of DWARF/PECOFF), code_file is used as debug_file, and a string of 33 zeroes is used as debug_identifier.
+* changes in `http_upload` - the old version is used that uploads only one file (and, therefore, takes file name and file contents as parameters, not a map). See `http_upload.h` for details.
+
+## Build
+
+I use the following configuration:
+
+* for Breakpad: Mingw-w64 with MSYS2 64bit (I use Windows 8.1 64-bit)
+* for symupload_nodump: Visual C++ 2015 with Visual Studio 2015 Community
+
+To build Breakpad, run:
+```
+autoreconf -fvi
+./configure
+make
+```
+This will give you dump_syms_dwarf, minidump_stackwalk and some other binaries.
+
 # Breakpad
 
 Breakpad is a set of client and server components which implement a
